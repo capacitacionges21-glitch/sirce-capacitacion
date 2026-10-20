@@ -74,6 +74,7 @@
     <button data-tab="revision">2 · Revisión <span class="badge" id="badgeErr" hidden></span></button>
     <button data-tab="equiv">3 · Equivalencias</button>
     <button data-tab="generar">4 · Generar</button>
+    <button data-tab="dc3">5 · DC-3</button>
   </nav>
 </header>
 <main>
@@ -104,6 +105,12 @@
         <div class="status" id="st-cursos"></div>
       </div>
       <div class="card">
+        <h2>Información de sucursales (DC-3)</h2>
+        <p class="hint">Libro con sucursal, clave de establecimiento, razón social, RFC y representante de los trabajadores. También completa las claves de establecimiento del layout.</p>
+        <label class="drop" data-kind="info"><input type="file" accept=".xls,.xlsx,.xlsm">Arrastra aquí o haz clic para elegir</label>
+        <div class="status" id="st-info"></div>
+      </div>
+      <div class="card">
         <h2>Cargas anteriores a SIRCE <span class="tag">opcional</span></h2>
         <p class="hint">Layouts que ya subiste. La herramienta aprende de ellos la clave de establecimiento por sucursal y la clave de ocupación por puesto.</p>
         <label class="drop" data-kind="previas"><input type="file" multiple accept=".xls,.xlsx,.xlsm">Arrastra aquí o haz clic para elegir</label>
@@ -126,10 +133,17 @@
   <section class="tab" id="tab-generar">
     <div id="generar"></div>
   </section>
+
+  <section class="tab" id="tab-dc3">
+    <div id="dc3"></div>
+  </section>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="js/core.js"></script>
+<script src="js/dc3.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

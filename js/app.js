@@ -8,7 +8,7 @@
   const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } };
 
   const S = {
-    reportes: [], reporteRows: new Map(), catalogo: null, clavesBase: null, claves: null, cursos: null, previas: [],
+    reportes: [], reporteRows: new Map(), catalogo: null, clavesBase: null, claves: null, cursos: null, previas: [], info: null,
     ov: Object.assign(Core.emptyOv(), lsGet('sirce.ov', {})), ex: Object.assign({ cursos: [], empresas: [] }, lsGet('sirce.ex', {})),
     res: null, limit: {},
   };
@@ -36,6 +36,7 @@
   function rebuildClaves() {
     if (!S.clavesBase) { S.claves = null; return; }
     S.claves = cloneClaves(S.clavesBase);
+    if (S.info && S.info.data) Core.mergeInfoDC3(S.claves, S.info.data);
     for (const p of S.previas) Core.mergePrevias(S.claves, p.data);
   }
 
@@ -61,6 +62,11 @@
     async cursos(files) {
       const { r, sheet, error } = await loadWith(files[0], Core.parseClavesCursos);
       S.cursos = r ? { name: files[0].name, sheet, map: r.map, conflictos: r.conflictos } : { name: files[0].name, error };
+    },
+    async info(files) {
+      const { r, sheet, error } = await loadWith(files[0], Core.parseInfoDC3);
+      S.info = { name: files[0].name, sheet, data: r, error };
+      rebuildClaves();
     },
     async previas(files) {
       for (const f of files) {
@@ -106,7 +112,7 @@
   }
   $('#nav').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) showTab(b.dataset.tab); });
 
-  function renderAll() { renderStatus(); renderRevision(); renderEquiv(); renderGenerar(); }
+  function renderAll() { renderStatus(); renderRevision(); renderEquiv(); renderGenerar(); renderDC3(); }
 
   /* ---------- estado de archivos ---------- */
   const tag = (t, c) => `<span class="tag ${c || ''}">${esc(t)}</span>`;
@@ -120,6 +126,8 @@
     const cu = S.cursos;
     $('#st-cursos').innerHTML = cu ? fileLine(cu.name, cu.error ? tag(cu.error, 'bad') : tag(`${cu.map.size} claves de curso`, 'ok')) +
       (cu.conflictos && cu.conflictos.length ? `<div class="msg warn">${cu.conflictos.length} curso(s) con dos claves distintas para el mismo nombre, fecha y empresa; se usa la primera: ${esc(cu.conflictos.map((x) => x.nombre + ' ' + x.fecha + ' (' + x.claves.join(' / ') + ')').join('; '))}</div>` : '') : '';
+    const inf = S.info;
+    $('#st-info').innerHTML = inf ? fileLine(inf.name, inf.data ? tag(`${inf.data.map.size} sucursales · ${inf.data.razones.size} empresas`, 'ok') : tag(inf.error || 'No se reconoció el formato', 'bad')) : '';
     $('#st-previas').innerHTML = S.previas.map((x) => fileLine(x.name, x.data ? tag(`${x.data.sucursales.size} sucursales · ${x.data.puestos.size} puestos`, 'ok') : tag(x.error || 'Sin formato de layout', 'bad'))).join('');
     const m = $('#readyMsg');
     if (S.res) { m.hidden = false; m.className = 'msg ok'; m.textContent = 'Archivos listos. Continúa en “2 · Revisión”.' + (S.cursos && S.cursos.map ? '' : ' Falta el archivo de claves de cursos: todas las filas aparecerán sin clave de curso.'); }
@@ -375,6 +383,97 @@
     S.res.bajas.forEach((r) => rows.push([r.id, `${r.apPat} ${r.apMat} ${r.nombre}`.replace(/\s+/g, ' ').trim(), r.curso, r.compania, r.sucursal]));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Bajas');
     writeBook(wb, `Bajas_ignoradas_${stamp()}.xlsx`);
+  }
+
+
+  /* ---------- DC-3 ---------- */
+  const dc3Cfg = Object.assign({ patron: 'CARLOS MANUEL VILLARREAL TUYUB', orden: 'nombre', excluir: [] }, lsGet('sirce.dc3', {}));
+  const dc3Save = () => lsSet('sirce.dc3', dc3Cfg);
+  const dc3State = { busy: false, msg: '' };
+
+  function dc3Items() {
+    const R = S.res; if (!R || !S.info || !S.info.data) return null;
+    const items = [], sinDatos = [], sinRep = new Map();
+    for (const r of R.records.filter((x) => !x.errors.length)) {
+      const e = Core.datosEmpresa(S.info.data, r.sucursal, r.empresa);
+      if (!e) { sinDatos.push(r); continue; }
+      if (!e.rep) sinRep.set(r.sucursal, (sinRep.get(r.sucursal) || 0) + 1);
+      const d = r.det;
+      const nombre = dc3Cfg.orden === 'apellidos' ? `${d.apPat} ${d.apMat} ${d.nombre}` : `${d.nombre} ${d.apPat} ${d.apMat}`;
+      items.push({ rec: r, suc: r.sucursal, data: {
+        nombre: nombre.replace(/\s+/g, ' ').trim(), curp: r.curp, ocupacion: d.claveOcup, puesto: r.puesto, razon: e.razon, rfc: e.rfc,
+        curso: r.curso, horas: r.horas, fi: r.fi, ff: r.ff, agente: '', instructor: '', patron: dc3Cfg.patron, representante: e.rep,
+      } });
+    }
+    return { items, sinDatos, sinRep };
+  }
+
+  function renderDC3() {
+    const el = $('#dc3'); const R = S.res;
+    if (!R) { el.innerHTML = '<div class="card"><p class="muted">Carga los archivos en el paso 1.</p></div>'; return; }
+    if (!S.info || !S.info.data) { el.innerHTML = '<div class="card"><h2>Constancias DC-3</h2><div class="msg warn">Carga el archivo “Información de sucursales (DC-3)” en el paso 1 para tener razón social, RFC y representante de los trabajadores.</div></div>'; return; }
+    const D = dc3Items();
+    const bySuc = new Map(); D.items.forEach((i) => bySuc.set(i.suc, (bySuc.get(i.suc) || 0) + 1));
+    const sucs = [...bySuc].sort((a, b) => a[0].localeCompare(b[0]));
+    const ex = new Set(dc3Cfg.excluir);
+    const sel = D.items.filter((i) => !ex.has(i.suc)).length;
+    const pend = new Map(); D.sinDatos.forEach((r) => pend.set(r.sucursal + ' · ' + r.empresa, (pend.get(r.sucursal + ' · ' + r.empresa) || 0) + 1));
+    el.innerHTML = `<div class="card"><h2>Constancias DC-3 (PDF por colaborador)</h2>
+      <p class="hint">Se generan con las filas listas para SIRCE (sin errores), un PDF por colaborador y curso, en un ZIP con una carpeta por sucursal. Nombre del archivo: SUCURSAL - COLABORADOR - CURSO - DC3. El instructor y el agente capacitador van vacíos.</p>
+      <div class="row-actions" style="margin:0 0 12px"><label>Patrón o representante legal <input type="text" id="dc3Patron" value="${esc(dc3Cfg.patron)}" style="width:300px"></label>
+        <label>Orden del nombre <select id="dc3Orden"><option value="nombre" ${dc3Cfg.orden === 'nombre' ? 'selected' : ''}>Nombre y apellidos (como el ejemplo)</option><option value="apellidos" ${dc3Cfg.orden === 'apellidos' ? 'selected' : ''}>Apellidos y nombre (como indica el formato)</option></select></label></div>
+      ${D.sinDatos.length ? `<div class="msg bad">${D.sinDatos.length} constancias no se pueden generar porque falta la razón social o el RFC de su sucursal y empresa: ${esc([...pend].slice(0, 6).map(([k, v]) => k + ' (' + v + ')').join('; '))}${pend.size > 6 ? '…' : ''}</div>` : ''}
+      ${D.sinRep.size ? `<div class="msg warn">${[...D.sinRep.values()].reduce((a, b) => a + b, 0)} constancias saldrán sin representante de los trabajadores (${D.sinRep.size} sucursales sin dato en el archivo).</div>` : ''}
+      <details open><summary>Sucursales (${sucs.length}) · ${sel} constancias seleccionadas</summary>
+        <div class="row-actions" style="margin:0 0 8px"><button class="btn sec sm" id="dc3All">Todas</button><button class="btn sec sm" id="dc3None">Ninguna</button></div>
+        <div class="checks">${sucs.map(([n, c]) => `<label><input type="checkbox" data-suc="${esc(n)}" ${ex.has(n) ? '' : 'checked'}> ${esc(n)} <span class="c">${c}</span></label>`).join('')}</div></details>
+      <div class="row-actions"><button class="btn" id="dc3Go" ${sel && !dc3State.busy ? '' : 'disabled'}>Generar PDFs (ZIP)</button><button class="btn sec" id="dc3Pend">Descargar pendientes (Excel)</button></div>
+      <div id="dc3Prog" class="muted small" style="margin-top:10px">${esc(dc3State.msg)}</div></div>`;
+    $('#dc3Patron').onchange = (e) => { dc3Cfg.patron = e.target.value.trim(); dc3Save(); };
+    $('#dc3Orden').onchange = (e) => { dc3Cfg.orden = e.target.value; dc3Save(); };
+    $$('[data-suc]', el).forEach((cb) => cb.addEventListener('change', () => { const n = cb.dataset.suc; dc3Cfg.excluir = dc3Cfg.excluir.filter((x) => x !== n); if (!cb.checked) dc3Cfg.excluir.push(n); dc3Save(); renderDC3(); }));
+    $('#dc3All').onclick = () => { dc3Cfg.excluir = []; dc3Save(); renderDC3(); };
+    $('#dc3None').onclick = () => { dc3Cfg.excluir = sucs.map((x) => x[0]); dc3Save(); renderDC3(); };
+    $('#dc3Go').onclick = () => dc3Generate(D);
+    $('#dc3Pend').onclick = () => {
+      const rows = [['Problema', 'Sucursal', 'Empresa', 'Constancias']];
+      pend.forEach((v, k) => { const [s, e] = k.split(' · '); rows.push(['Sin razón social o RFC', s, e, v]); });
+      D.sinRep.forEach((v, k) => rows.push(['Sin representante de los trabajadores', k, '', v]));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Pendientes DC-3'); writeBook(wb, `Pendientes_DC3_${stamp()}.xlsx`);
+    };
+  }
+
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const carpeta = (s) => String(s || 'Sin sucursal').replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim() || 'Sin sucursal';
+  async function dc3Generate(D) {
+    const ex = new Set(dc3Cfg.excluir);
+    const items = D.items.filter((i) => !ex.has(i.suc)).sort((a, b) => a.suc.localeCompare(b.suc) || a.data.nombre.localeCompare(b.data.nombre));
+    const PART = 1000, parts = Math.ceil(items.length / PART);
+    dc3State.busy = true; $('#dc3Go').disabled = true; const prog = $('#dc3Prog');
+    try {
+      for (let p = 0; p < parts; p++) {
+        const zip = new JSZip(); const used = new Set();
+        const slice = items.slice(p * PART, (p + 1) * PART);
+        for (let i = 0; i < slice.length; i++) {
+          const it = slice[i];
+          const folder = carpeta(it.suc);
+          let base = DC3.nombreArchivo(it.suc, it.data.nombre, it.data.curso);
+          let path = `${folder}/${base}.pdf`;
+          if (used.has(path)) { base = base.replace(/ - DC3$/, ` ${Core.ymdStr(it.data.fi)} - DC3`); path = `${folder}/${base}.pdf`; }
+          for (let n = 2; used.has(path); n++) path = `${folder}/${base} (${n}).pdf`;
+          used.add(path);
+          const doc = DC3.crear(window.jspdf.jsPDF, it.data);
+          zip.file(path, doc.output('arraybuffer'));
+          if (i % 10 === 0) { prog.textContent = `Parte ${p + 1} de ${parts}: ${i + 1} de ${slice.length} constancias…`; await tick(); }
+        }
+        prog.textContent = `Comprimiendo parte ${p + 1} de ${parts}…`; await tick();
+        const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
+        download(blob, `DC3_${stamp()}${parts > 1 ? '_parte' + (p + 1) : ''}.zip`);
+        await tick();
+      }
+      dc3State.msg = `Listo: ${items.length} constancias en ${parts} archivo(s) ZIP.`;
+    } catch (e) { dc3State.msg = 'Error al generar: ' + (e.message || e); }
+    dc3State.busy = false; renderDC3();
   }
 
   wireDrops();

@@ -203,6 +203,43 @@
   };
   Core.cursoKey = (nombre, fecha, empresa) => `${norm(nombre)}|${ymdStr(fecha)}|${norm(empresa)}`;
 
+
+  /* Información para DC-3: sucursal -> clave de establecimiento, razón social, RFC y representante de los trabajadores */
+  Core.parseInfoDC3 = function (aoa) {
+    const hr = findHeaderRow(aoa, ['# DE SUCURSAL', 'SUCURSAL', 'RAZON SOCIAL', 'RFC']);
+    if (hr < 0) return null;
+    const cells = aoa[hr].map(norm);
+    const c = colFinder(aoa[hr]);
+    const I = { linea: c('LINEA'), clave: c('# DE SUCURSAL'), suc: c('SUCURSAL'), razon: c('RAZON SOCIAL'), rfc: c('RFC'), rep: cells.findIndex((x) => x.startsWith('SECRETARIO')) };
+    const map = new Map(), razones = new Map();
+    for (let i = hr + 1; i < aoa.length; i++) {
+      const r = aoa[i] || [];
+      if (!str(r[I.suc])) continue;
+      const rec = { linea: I.linea >= 0 ? str(r[I.linea]) : '', clave: toKey(r[I.clave]), sucursal: str(r[I.suc]), razon: str(r[I.razon]), rfc: norm(r[I.rfc]).replace(/\s/g, ''), rep: I.rep >= 0 ? str(r[I.rep]) : '' };
+      if (/ACTUALIZ/.test(norm(rec.rep))) rec.rep = '';
+      map.set(norm(rec.sucursal), rec);
+      if (rec.razon && rec.rfc) razones.set(Core.empresaKey(rec.razon), { razon: rec.razon, rfc: rec.rfc });
+    }
+    return { map, razones };
+  };
+  /* Nombre de empresa sin tipo de sociedad ni puntuación, para comparar "MOTEBURGER" con "MOTEBURGER S.A. DE C.V." */
+  Core.empresaKey = (s) => norm(s).replace(/[.,]/g, '').replace(/\b(SAPI|SA) ?DE ?CV\b/g, '').replace(/\bSAPIDE ?CV\b/g, '').replace(/\bS A DE C ?V\b/g, '').replace(/\s+/g, ' ').trim();
+  Core.mergeInfoDC3 = function (claves, info) {
+    for (const [k, v] of info.map) {
+      if (v.clave === null) continue;
+      if (!claves.sucursales.map.has(k)) claves.sucursales.map.set(k, v.clave);
+      if (!claves.sucursales.names.has(k)) claves.sucursales.names.set(k, v.sucursal);
+    }
+  };
+  /* Datos de empresa para un registro: primero por sucursal, si no por nombre de empresa del reporte */
+  Core.datosEmpresa = function (info, sucursal, empresaReporte) {
+    const s = info.map.get(norm(sucursal));
+    if (s && s.razon && s.rfc) return { razon: s.razon, rfc: s.rfc, rep: s.rep, origen: 'sucursal' };
+    const e = info.razones.get(Core.empresaKey(empresaReporte));
+    if (e) return { razon: e.razon, rfc: e.rfc, rep: (s && s.rep) || '', origen: 'empresa' };
+    return null;
+  };
+
   /* ---------- reglas por defecto ---------- */
   const ESTADO_ALIAS = {
     'MEXICO': 'ESTADO DE MEXICO', 'EDO MEXICO': 'ESTADO DE MEXICO', 'EDO DE MEXICO': 'ESTADO DE MEXICO',
@@ -353,6 +390,7 @@
         nombreCompleto: `${r.apPat} ${r.apMat} ${r.nombre}`.replace(/\s+/g, ' ').trim(),
         fi: dates.fi, ff: dates.ff, fechaCorregida: dates.fixed, errors, warnings,
         puesto: puestoTxt, instructor: r.instructor, curp, horas,
+        det: { apPat: r.apPat, apMat: r.apMat, nombre: r.nombre, claveOcup: claveOcup ?? '', claveSuc: claveSuc ?? '' },
         layout: [
           curp, r.nombre, r.apPat, r.apMat, claveEstado ?? '', estadoNombre, claveMun ?? '', munNombre,
           claveOcup ?? '', puestoTxt, nk && nk.nivel !== null ? nk.nivel : '', nivelNombre ? (claves.niveles.get(nivelNombre) || { nombre: nivelNombre }).nombre : '',
