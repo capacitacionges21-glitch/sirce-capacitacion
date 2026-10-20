@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Herramienta SIRCE</title>
+<style>
+  :root {
+    --bg: #f4f6f9; --card: #ffffff; --ink: #1c2733; --muted: #5f6f81; --line: #dde3ea;
+    --brand: #0b5cab; --brand-ink: #ffffff; --ok: #1a7f4b; --warn: #b26a00; --bad: #b3261e;
+    --ok-bg: #e6f4ec; --warn-bg: #fff3dc; --bad-bg: #fce8e6; --chip: #eaf1f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11161c; --card: #1a222b; --ink: #e8edf2; --muted: #98a6b5; --line: #2b3641;
+      --brand: #4b9cf0; --brand-ink: #08121d; --ok: #5fcf92; --warn: #f0b24a; --bad: #ff8d84;
+      --ok-bg: #16301f; --warn-bg: #33270f; --bad-bg: #3a1a18; --chip: #213244; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav button { background: transparent; border: 1px solid transparent; color: var(--muted); padding: 8px 14px; border-radius: 8px; cursor: pointer; font: inherit; }
+  nav button.on { background: var(--chip); color: var(--brand); border-color: var(--line); font-weight: 600; }
+  nav button .badge { background: var(--bad); color: #fff; border-radius: 10px; font-size: 11px; padding: 1px 7px; margin-left: 6px; }
+  main { max-width: 1180px; margin: 0 auto; padding: 20px 24px 60px; }
+  section.tab { display: none; }
+  section.tab.on { display: block; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; margin: 0 0 4px; }
+  .card p.hint { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .drop { border: 2px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center; cursor: pointer; transition: .15s; }
+  .drop:hover, .drop.over { border-color: var(--brand); background: var(--chip); }
+  .drop input { display: none; }
+  .status { margin-top: 10px; font-size: 13px; text-align: left; }
+  .status .f { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-top: 1px solid var(--line); }
+  .status .f:first-child { border-top: 0; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; background: var(--chip); color: var(--muted); }
+  .tag.ok { background: var(--ok-bg); color: var(--ok); } .tag.warn { background: var(--warn-bg); color: var(--warn); } .tag.bad { background: var(--bad-bg); color: var(--bad); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 24px; } .stat span { color: var(--muted); font-size: 12.5px; }
+  .stat.ok b { color: var(--ok); } .stat.bad b { color: var(--bad); }
+  button.btn { background: var(--brand); color: var(--brand-ink); border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; font: inherit; font-weight: 600; }
+  button.btn.sec { background: transparent; color: var(--brand); border: 1px solid var(--line); }
+  button.btn:disabled { opacity: .45; cursor: not-allowed; }
+  button.btn.sm { padding: 4px 10px; font-size: 13px; }
+  input[type=text], input[type=number], input[type=date], select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12.5px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  td.n { text-align: right; white-space: nowrap; width: 70px; }
+  details { margin-bottom: 12px; }
+  details > summary { cursor: pointer; font-weight: 600; padding: 8px 2px; }
+  .msg { padding: 10px 12px; border-radius: 8px; font-size: 13.5px; margin: 8px 0; }
+  .msg.warn { background: var(--warn-bg); color: var(--warn); } .msg.bad { background: var(--bad-bg); color: var(--bad); } .msg.ok { background: var(--ok-bg); color: var(--ok); }
+  .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .muted { color: var(--muted); } .small { font-size: 12.5px; }
+  .checks { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+  .checks label { display: flex; gap: 8px; padding: 3px 0; align-items: center; }
+  .checks label span.c { margin-left: auto; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Herramienta SIRCE · Capacitación</h1>
+    <div class="sub">Arma el layout de carga a partir de tus reportes. Todo se procesa en tu navegador; los archivos no se suben a ningún servidor.</div>
+  </div>
+  <nav id="nav">
+    <button data-tab="archivos" class="on">1 · Archivos</button>
+    <button data-tab="revision">2 · Revisión <span class="badge" id="badgeErr" hidden></span></button>
+    <button data-tab="equiv">3 · Equivalencias</button>
+    <button data-tab="generar">4 · Generar</button>
+  </nav>
+</header>
+<main>
+  <section class="tab on" id="tab-archivos">
+    <div class="grid">
+      <div class="card">
+        <h2>Reportes de capacitación (NOM)</h2>
+        <p class="hint">Uno o varios archivos .xls / .xlsx del reporte del sistema de cursos.</p>
+        <label class="drop" data-kind="reportes"><input type="file" multiple accept=".xls,.xlsx,.xlsm">Arrastra aquí o haz clic para elegir</label>
+        <div class="status" id="st-reportes"></div>
+      </div>
+      <div class="card">
+        <h2>Catálogo de colaboradores</h2>
+        <p class="hint">Debe traer ID, CURP, puesto, escolaridad, estado y sucursal. Quien no esté aquí se considera baja y se ignora.</p>
+        <label class="drop" data-kind="catalogo"><input type="file" accept=".xls,.xlsx,.xlsm">Arrastra aquí o haz clic para elegir</label>
+        <div class="status" id="st-catalogo"></div>
+      </div>
+      <div class="card">
+        <h2>Catálogo de claves</h2>
+        <p class="hint">Libro con la hoja “Claves” (estado, municipio, puesto, escolaridad y sucursal). Las columnas de usuario y contraseña de SIRCE no se leen.</p>
+        <label class="drop" data-kind="claves"><input type="file" accept=".xls,.xlsx,.xlsm">Arrastra aquí o haz clic para elegir</label>
+        <div class="status" id="st-claves"></div>
+      </div>
+      <div class="card">
+        <h2>Claves de cursos</h2>
+        <p class="hint">Nombre del curso, fecha de inicio, empresa y clave. Se carga cada vez porque las claves se obtienen en un proceso aparte.</p>
+        <label class="drop" data-kind="cursos"><input type="file" accept=".xls,.xlsx,.xlsm">Arrastra aquí o haz clic para elegir</label>
+        <div class="status" id="st-cursos"></div>
+      </div>
+      <div class="card">
+        <h2>Cargas anteriores a SIRCE <span class="tag">opcional</span></h2>
+        <p class="hint">Layouts que ya subiste. La herramienta aprende de ellos la clave de establecimiento por sucursal y la clave de ocupación por puesto.</p>
+        <label class="drop" data-kind="previas"><input type="file" multiple accept=".xls,.xlsx,.xlsm">Arrastra aquí o haz clic para elegir</label>
+        <div class="status" id="st-previas"></div>
+      </div>
+    </div>
+    <div class="msg ok" id="readyMsg" hidden></div>
+  </section>
+
+  <section class="tab" id="tab-revision">
+    <div class="stats" id="stats"></div>
+    <div class="card" id="filtros"></div>
+    <div id="errores"></div>
+  </section>
+
+  <section class="tab" id="tab-equiv">
+    <div id="equiv"></div>
+  </section>
+
+  <section class="tab" id="tab-generar">
+    <div id="generar"></div>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="js/core.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

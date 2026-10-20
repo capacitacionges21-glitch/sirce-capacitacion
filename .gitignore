@@ -1,0 +1,12 @@
+# Nunca subir datos personales ni credenciales
+*.xls
+*.xlsx
+*.xlsm
+*.csv
+*.pdf
+*.docx
+*.zip
+node_modules/
+.env*
+tests/data/
+.claude/
